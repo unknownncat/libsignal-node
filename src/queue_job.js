@@ -1,10 +1,12 @@
 // vim: ts=4:sw=4:expandtab
- 
- /*
-  * jobQueue manages multiple queues indexed by device to serialize
-  * session io ops on the database.
-  */
+
+/*
+ * jobQueue manages multiple queues indexed by device to serialize
+ * session io ops on the database.
+ */
 'use strict';
+
+const { default: native } = require('./native');
 
 
 const _queueAsyncBuckets = new Map();
@@ -18,7 +20,7 @@ async function _asyncQueueExecutor(queue, cleanup) {
             const job = queue[i];
             try {
                 job.resolve(await job.awaitable());
-            } catch(e) {
+            } catch (e) {
                 job.reject(e);
             }
         }
@@ -37,13 +39,17 @@ async function _asyncQueueExecutor(queue, cleanup) {
     cleanup();
 }
 
-module.exports = function(bucket, awaitable) {
+module.exports = function (bucket, awaitable) {
     /* Run the async awaitable only when all other async calls registered
      * here have completed (or thrown).  The bucket argument is a hashable
      * key representing the task queue to use. */
+    if (native && typeof native.queueJobByBucket === 'function' && typeof bucket === 'string') {
+        return native.queueJobByBucket(bucket, awaitable);
+    }
+
     if (!awaitable.name) {
         // Make debuging easier by adding a name to this function.
-        Object.defineProperty(awaitable, 'name', {writable: true});
+        Object.defineProperty(awaitable, 'name', { writable: true });
         if (typeof bucket === 'string') {
             awaitable.name = bucket;
         } else {

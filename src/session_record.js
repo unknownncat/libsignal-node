@@ -1,6 +1,7 @@
 // vim: ts=4:sw=4
 
 const BaseKeyType = require('./base_key_type');
+const { default: native } = require('./native');
 
 const CLOSED_SESSIONS_MAX = 40;
 const SESSION_RECORD_VERSION = 'v1';
@@ -30,8 +31,12 @@ class SessionEntry {
 
     addChain(key, value) {
         assertBuffer(key);
+        if (native && typeof native.sessionEntryAddChain === 'function') {
+            native.sessionEntryAddChain(this._chains, key, value);
+            return;
+        }
         const id = key.toString('base64');
-        if (this._chains.hasOwnProperty(id)) {
+        if (Object.prototype.hasOwnProperty.call(this._chains, id)) {
             throw new Error("Overwrite attempt");
         }
         this._chains[id] = value;
@@ -39,13 +44,20 @@ class SessionEntry {
 
     getChain(key) {
         assertBuffer(key);
+        if (native && typeof native.sessionEntryGetChain === 'function') {
+            return native.sessionEntryGetChain(this._chains, key);
+        }
         return this._chains[key.toString('base64')];
     }
 
     deleteChain(key) {
         assertBuffer(key);
+        if (native && typeof native.sessionEntryDeleteChain === 'function') {
+            native.sessionEntryDeleteChain(this._chains, key);
+            return;
+        }
         const id = key.toString('base64');
-        if (!this._chains.hasOwnProperty(id)) {
+        if (!Object.prototype.hasOwnProperty.call(this._chains, id)) {
             throw new ReferenceError("Not Found");
         }
         delete this._chains[id];
@@ -171,8 +183,8 @@ const migrations = [{
             for (const key in sessions) {
                 if (sessions[key].indexInfo.closed === -1) {
                     console.error('V1 session storage migration error: registrationId',
-                                  data.registrationId, 'for open session version',
-                                  data.version);
+                        data.registrationId, 'for open session version',
+                        data.version);
                 }
             }
         }
@@ -231,12 +243,18 @@ class SessionRecord {
     }
 
     haveOpenSession() {
+        if (native && typeof native.sessionRecordHaveOpenSession === 'function') {
+            return native.sessionRecordHaveOpenSession(this.sessions);
+        }
         const openSession = this.getOpenSession();
         return (!!openSession && typeof openSession.registrationId === 'number');
     }
 
     getSession(key) {
         assertBuffer(key);
+        if (native && typeof native.sessionRecordGetSessionByBaseKey === 'function') {
+            return native.sessionRecordGetSessionByBaseKey(this.sessions, key, BaseKeyType.OURS);
+        }
         const session = this.sessions[key.toString('base64')];
         if (session && session.indexInfo.baseKeyType === BaseKeyType.OURS) {
             throw new Error("Tried to lookup a session using our basekey");
@@ -245,6 +263,9 @@ class SessionRecord {
     }
 
     getOpenSession() {
+        if (native && typeof native.sessionRecordGetOpenSession === 'function') {
+            return native.sessionRecordGetOpenSession(this.sessions);
+        }
         for (const session of Object.values(this.sessions)) {
             if (!this.isClosed(session)) {
                 return session;
@@ -257,6 +278,9 @@ class SessionRecord {
     }
 
     getSessions() {
+        if (native && typeof native.sessionRecordGetSessionsSorted === 'function') {
+            return native.sessionRecordGetSessionsSorted(this.sessions);
+        }
         // Return sessions ordered with most recently used first.
         return Array.from(Object.values(this.sessions)).sort((a, b) => {
             const aUsed = a.indexInfo.used || 0;
@@ -287,6 +311,10 @@ class SessionRecord {
     }
 
     removeOldSessions() {
+        if (native && typeof native.sessionRecordRemoveOldSessions === 'function') {
+            native.sessionRecordRemoveOldSessions(this.sessions, CLOSED_SESSIONS_MAX);
+            return;
+        }
         while (Object.keys(this.sessions).length > CLOSED_SESSIONS_MAX) {
             let oldestKey;
             let oldestSession;
@@ -307,6 +335,10 @@ class SessionRecord {
     }
 
     deleteAllSessions() {
+        if (native && typeof native.sessionRecordDeleteAllSessions === 'function') {
+            native.sessionRecordDeleteAllSessions(this.sessions);
+            return;
+        }
         for (const key of Object.keys(this.sessions)) {
             delete this.sessions[key];
         }

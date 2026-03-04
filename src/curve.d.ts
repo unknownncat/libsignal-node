@@ -1,22 +1,19 @@
 export interface KeyPairType {
-  pubKey: Uint8Array;
-  privKey: Uint8Array;
+  pubKey: Buffer;
+  privKey: Buffer;
 }
+
+export function getPublicFromPrivateKey(privateKey: Buffer): Buffer;
 
 export function generateKeyPair(): KeyPairType;
 
-export function calculateAgreement(
-  publicKey: Uint8Array,
-  privateKey: Uint8Array
-): Uint8Array;
+export function calculateAgreement(publicKey: Buffer, privateKey: Buffer): Buffer;
 
-export function calculateSignature(
-  privateKey: Uint8Array,
-  message: Uint8Array
-): Uint8Array;
+export function calculateSignature(privateKey: Buffer, message: Buffer): Buffer;
 
 export function verifySignature(
-  publicKey: Uint8Array,
-  message: Uint8Array,
-  signature: Uint8Array
+  publicKey: Buffer,
+  message: Buffer,
+  signature: Buffer
 ): boolean;
+

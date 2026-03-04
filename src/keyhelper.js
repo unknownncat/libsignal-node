@@ -2,19 +2,23 @@
 
 const curve = require('./curve');
 const nodeCrypto = require('crypto');
+const { default: native } = require('./native');
 
 function isNonNegativeInteger(n) {
-    return (typeof n === 'number' && (n % 1) === 0  && n >= 0);
+    return (typeof n === 'number' && (n % 1) === 0 && n >= 0);
 }
 
 exports.generateIdentityKeyPair = curve.generateKeyPair;
 
-exports.generateRegistrationId = function() {
-    var registrationId = Uint16Array.from(nodeCrypto.randomBytes(2))[0];
+exports.generateRegistrationId = function () {
+    if (native && typeof native.generateRegistrationId14 === 'function') {
+        return native.generateRegistrationId14();
+    }
+    const registrationId = nodeCrypto.randomBytes(2).readUInt16LE(0);
     return registrationId & 0x3fff;
 };
 
-exports.generateSignedPreKey = function(identityKeyPair, signedKeyId) {
+exports.generateSignedPreKey = function (identityKeyPair, signedKeyId) {
     if (!(identityKeyPair.privKey instanceof Buffer) ||
         identityKeyPair.privKey.byteLength != 32 ||
         !(identityKeyPair.pubKey instanceof Buffer) ||
@@ -33,7 +37,7 @@ exports.generateSignedPreKey = function(identityKeyPair, signedKeyId) {
     };
 };
 
-exports.generatePreKey = function(keyId) {
+exports.generatePreKey = function (keyId) {
     if (!isNonNegativeInteger(keyId)) {
         throw new TypeError('Invalid argument for keyId: ' + keyId);
     }

@@ -1,55 +1,89 @@
-interface E2ESession {
+import type { KeyPairType } from './src/curve';
+
+export interface E2ESession {
   registrationId: number;
-  identityKey: Uint8Array;
+  identityKey: Buffer;
   signedPreKey: {
     keyId: number;
-    publicKey: Uint8Array;
-    signature: Uint8Array;
+    publicKey: Buffer;
+    signature: Buffer;
   };
-  preKey: {
+  preKey?: {
     keyId: number;
-    publicKey: Uint8Array;
+    publicKey: Buffer;
   };
+}
+
+export interface SerializedSessionRecord {
+  version?: string;
+  _sessions?: Record<string, unknown>;
+  registrationId?: number;
+  [key: string]: unknown;
 }
 
 export interface SignalStorage {
-  loadSession(id: string): Promise<SessionRecord | null | undefined>;
-  storeSession(id: string, session: SessionRecord): Promise<void>;
+  loadSession(
+    id: string
+  ): Promise<SessionRecord | null | undefined> | SessionRecord | null | undefined;
+  storeSession(id: string, session: SessionRecord): Promise<void> | void;
   isTrustedIdentity(
     identifier: string,
-    identityKey: Uint8Array,
-    direction: number
-  ): boolean;
+    identityKey: Buffer | Uint8Array,
+    direction?: number
+  ): Promise<boolean> | boolean;
   loadPreKey(
     id: number | string
-  ): Promise<{ privKey: Buffer; pubKey: Buffer } | undefined>;
-  removePreKey(id: number): void;
-  loadSignedPreKey(): { privKey: Buffer; pubKey: Buffer };
+  ): Promise<KeyPairType | undefined> | KeyPairType | undefined;
+  removePreKey(id: number): Promise<void> | void;
+  loadSignedPreKey(
+    id: number | string
+  ): Promise<KeyPairType | undefined> | KeyPairType | undefined;
   getOurRegistrationId(): Promise<number> | number;
-  getOurIdentity(): { privKey: Buffer; pubKey: Buffer };
+  getOurIdentity(): Promise<KeyPairType> | KeyPairType;
 }
 
 export class ProtocolAddress {
+  static from(encodedAddress: string): ProtocolAddress;
   constructor(name: string, deviceId: number);
   public id: string;
   public deviceId: number;
   public toString(): string;
+  public is(other: ProtocolAddress): boolean;
 }
 
 export class SessionRecord {
-  static deserialize(serialized: Uint8Array): SessionRecord;
-  public serialize(): Uint8Array;
+  static deserialize(serialized: SerializedSessionRecord): SessionRecord;
+  public serialize(): SerializedSessionRecord;
   public haveOpenSession(): boolean;
+  public deleteAllSessions(): void;
 }
 
 export class SessionCipher {
   constructor(storage: SignalStorage, remoteAddress: ProtocolAddress);
-  public decryptPreKeyWhisperMessage(ciphertext: Uint8Array): Promise<Buffer>;
-  public decryptWhisperMessage(ciphertext: Uint8Array): Promise<Buffer>;
-  public encrypt(data: Uint8Array): Promise<{ type: number; body: string }>;
+  public decryptPreKeyWhisperMessage(ciphertext: Buffer): Promise<Buffer>;
+  public decryptWhisperMessage(ciphertext: Buffer): Promise<Buffer>;
+  public encrypt(
+    data: Buffer | Uint8Array
+  ): Promise<{ type: number; body: Buffer; registrationId: number }>;
+  public hasOpenSession(): Promise<boolean>;
+  public closeOpenSession(): Promise<void>;
 }
 
 export class SessionBuilder {
   constructor(storage: SignalStorage, remoteAddress: ProtocolAddress);
   public initOutgoing(session: E2ESession): Promise<void>;
 }
+
+export class SignalError extends Error {}
+export class UntrustedIdentityKeyError extends SignalError {
+  addr: string;
+  identityKey: Buffer | Uint8Array;
+}
+export class SessionError extends SignalError {}
+export class MessageCounterError extends SessionError {}
+export class PreKeyError extends SessionError {}
+
+export const crypto: typeof import('./src/crypto');
+export const curve: typeof import('./src/curve');
+export const keyhelper: typeof import('./src/keyhelper');
+

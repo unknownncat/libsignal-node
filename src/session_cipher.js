@@ -7,6 +7,7 @@ const SessionRecord = require('./session_record');
 const crypto = require('./crypto');
 const curve = require('./curve');
 const errors = require('./errors');
+const { default: native } = require('./native');
 const protobufs = require('./protobufs');
 const queueJob = require('./queue_job');
 
@@ -31,6 +32,9 @@ class SessionCipher {
     }
 
     _encodeTupleByte(number1, number2) {
+        if (native && typeof native.encodeTupleByte === 'function') {
+            return native.encodeTupleByte(number1, number2);
+        }
         if (number1 > 15 || number2 > 15) {
             throw TypeError("Numbers must be 4 bits or less");
         }
@@ -38,6 +42,9 @@ class SessionCipher {
     }
 
     _decodeTupleByte(byte) {
+        if (native && typeof native.decodeTupleByte === 'function') {
+            return native.decodeTupleByte(byte);
+        }
         return [byte >> 4, byte & 0xf];
     }
 
@@ -48,7 +55,7 @@ class SessionCipher {
     async getRecord() {
         const record = await this.storage.loadSession(this.addr.toString());
         if (record && !(record instanceof SessionRecord)) {
-            throw new TypeError('SessionRecord type expected from loadSession'); 
+            throw new TypeError('SessionRecord type expected from loadSession');
         }
         return record;
     }
@@ -84,7 +91,7 @@ class SessionCipher {
             }
             this.fillMessageKeys(chain, chain.chainKey.counter + 1);
             const keys = crypto.deriveSecrets(chain.messageKeys[chain.chainKey.counter],
-                                              Buffer.alloc(32), Buffer.from("WhisperMessageKeys"));
+                Buffer.alloc(32), Buffer.from("WhisperMessageKeys"));
             delete chain.messageKeys[chain.chainKey.counter];
             const msg = protobufs.WhisperMessage.create();
             msg.ephemeralKey = session.currentRatchet.ephemeralKeyPair.pubKey;
@@ -92,16 +99,41 @@ class SessionCipher {
             msg.previousCounter = session.currentRatchet.previousCounter;
             msg.ciphertext = crypto.encrypt(keys[0], data, keys[2].slice(0, 16));
             const msgBuf = protobufs.WhisperMessage.encode(msg).finish();
-            const macInput = Buffer.alloc(msgBuf.byteLength + (33 * 2) + 1);
-            macInput.set(ourIdentityKey.pubKey);
-            macInput.set(session.indexInfo.remoteIdentityKey, 33);
-            macInput[33 * 2] = this._encodeTupleByte(VERSION, VERSION);
-            macInput.set(msgBuf, (33 * 2) + 1);
+            const versionTuple = this._encodeTupleByte(VERSION, VERSION);
+            const macInput = native && typeof native.buildWhisperMacInputAsync === 'function'
+                ? await native.buildWhisperMacInputAsync(
+                    ourIdentityKey.pubKey,
+                    session.indexInfo.remoteIdentityKey,
+                    versionTuple,
+                    Buffer.from(msgBuf)
+                )
+                : native && typeof native.buildWhisperMacInput === 'function'
+                    ? native.buildWhisperMacInput(
+                        ourIdentityKey.pubKey,
+                        session.indexInfo.remoteIdentityKey,
+                        versionTuple,
+                        Buffer.from(msgBuf)
+                    )
+                    : (() => {
+                        const fallback = Buffer.alloc(msgBuf.byteLength + (33 * 2) + 1);
+                        fallback.set(ourIdentityKey.pubKey);
+                        fallback.set(session.indexInfo.remoteIdentityKey, 33);
+                        fallback[33 * 2] = versionTuple;
+                        fallback.set(msgBuf, (33 * 2) + 1);
+                        return fallback;
+                    })();
             const mac = crypto.calculateMAC(keys[1], macInput);
-            const result = Buffer.alloc(msgBuf.byteLength + 9);
-            result[0] = this._encodeTupleByte(VERSION, VERSION);
-            result.set(msgBuf, 1);
-            result.set(mac.slice(0, 8), msgBuf.byteLength + 1);
+            const result = native && typeof native.assembleWhisperFrameAsync === 'function'
+                ? await native.assembleWhisperFrameAsync(versionTuple, Buffer.from(msgBuf), mac, 8)
+                : native && typeof native.assembleWhisperFrame === 'function'
+                    ? native.assembleWhisperFrame(versionTuple, Buffer.from(msgBuf), mac, 8)
+                    : (() => {
+                        const fallback = Buffer.alloc(msgBuf.byteLength + 9);
+                        fallback[0] = versionTuple;
+                        fallback.set(msgBuf, 1);
+                        fallback.set(mac.slice(0, 8), msgBuf.byteLength + 1);
+                        return fallback;
+                    })();
             await this.storeRecord(record);
             let type, body;
             if (session.pendingPreKey) {
@@ -139,10 +171,10 @@ class SessionCipher {
         // Stop and return the result if we get a valid result.
         if (!sessions.length) {
             throw new errors.SessionError("No sessions available");
-        }   
+        }
         const errs = [];
         for (const session of sessions) {
-            let plaintext; 
+            let plaintext;
             try {
                 plaintext = await this.doDecryptWhisperMessage(data, session);
                 session.indexInfo.used = Date.now();
@@ -150,7 +182,7 @@ class SessionCipher {
                     session,
                     plaintext
                 };
-            } catch(e) {
+            } catch (e) {
                 errs.push(e);
             }
         }
@@ -172,7 +204,7 @@ class SessionCipher {
             const remoteIdentityKey = result.session.indexInfo.remoteIdentityKey;
             if (!await this.storage.isTrustedIdentity(this.addr.id, remoteIdentityKey)) {
                 throw new errors.UntrustedIdentityKeyError(this.addr.id, remoteIdentityKey);
-            }   
+            }
             if (record.isClosed(result.session)) {
                 // It's possible for this to happen when processing a backlog of messages.
                 // The message was, hopefully, just sent back in a time when this session
@@ -230,7 +262,7 @@ class SessionCipher {
             throw new Error("Tried to decrypt on a sending chain");
         }
         this.fillMessageKeys(chain, message.counter);
-        if (!chain.messageKeys.hasOwnProperty(message.counter)) {
+        if (!Object.prototype.hasOwnProperty.call(chain.messageKeys, message.counter)) {
             // Most likely the message was already decrypted and we are trying to process
             // twice.  This can happen if the user restarts before the server gets an ACK.
             throw new errors.MessageCounterError('Key used already or never filled');
@@ -238,13 +270,31 @@ class SessionCipher {
         const messageKey = chain.messageKeys[message.counter];
         delete chain.messageKeys[message.counter];
         const keys = crypto.deriveSecrets(messageKey, Buffer.alloc(32),
-                                          Buffer.from("WhisperMessageKeys"));
+            Buffer.from("WhisperMessageKeys"));
         const ourIdentityKey = await this.storage.getOurIdentity();
-        const macInput = Buffer.alloc(messageProto.byteLength + (33 * 2) + 1);
-        macInput.set(session.indexInfo.remoteIdentityKey);
-        macInput.set(ourIdentityKey.pubKey, 33);
-        macInput[33 * 2] = this._encodeTupleByte(VERSION, VERSION);
-        macInput.set(messageProto, (33 * 2) + 1);
+        const versionTuple = this._encodeTupleByte(VERSION, VERSION);
+        const macInput = native && typeof native.buildWhisperMacInputAsync === 'function'
+            ? await native.buildWhisperMacInputAsync(
+                session.indexInfo.remoteIdentityKey,
+                ourIdentityKey.pubKey,
+                versionTuple,
+                Buffer.from(messageProto)
+            )
+            : native && typeof native.buildWhisperMacInput === 'function'
+                ? native.buildWhisperMacInput(
+                    session.indexInfo.remoteIdentityKey,
+                    ourIdentityKey.pubKey,
+                    versionTuple,
+                    Buffer.from(messageProto)
+                )
+                : (() => {
+                    const fallback = Buffer.alloc(messageProto.byteLength + (33 * 2) + 1);
+                    fallback.set(session.indexInfo.remoteIdentityKey);
+                    fallback.set(ourIdentityKey.pubKey, 33);
+                    fallback[33 * 2] = versionTuple;
+                    fallback.set(messageProto, (33 * 2) + 1);
+                    return fallback;
+                })();
         // This is where we most likely fail if the session is not a match.
         // Don't misinterpret this as corruption.
         crypto.verifyMAC(macInput, keys[1], messageBuffer.slice(-8), 8);
@@ -254,6 +304,18 @@ class SessionCipher {
     }
 
     fillMessageKeys(chain, counter) {
+        if (native && typeof native.fillMessageKeys === 'function') {
+            try {
+                native.fillMessageKeys(chain, counter);
+                return;
+            } catch (e) {
+                if (e && (e.message === 'Over 2000 messages into the future!' ||
+                    e.message === 'Chain closed')) {
+                    throw new errors.SessionError(e.message);
+                }
+                throw e;
+            }
+        }
         if (chain.chainKey.counter >= counter) {
             return;
         }
@@ -263,11 +325,12 @@ class SessionCipher {
         if (chain.chainKey.key === undefined) {
             throw new errors.SessionError('Chain closed');
         }
-        const key = chain.chainKey.key;
-        chain.messageKeys[chain.chainKey.counter + 1] = crypto.calculateMAC(key, Buffer.from([1]));
-        chain.chainKey.key = crypto.calculateMAC(key, Buffer.from([2]));
-        chain.chainKey.counter += 1;
-        return this.fillMessageKeys(chain, counter);
+        while (chain.chainKey.counter < counter) {
+            const key = chain.chainKey.key;
+            chain.messageKeys[chain.chainKey.counter + 1] = crypto.calculateMAC(key, Buffer.from([1]));
+            chain.chainKey.key = crypto.calculateMAC(key, Buffer.from([2]));
+            chain.chainKey.counter += 1;
+        }
     }
 
     maybeStepRatchet(session, remoteKey, previousCounter) {
@@ -296,7 +359,7 @@ class SessionCipher {
         let ratchet = session.currentRatchet;
         const sharedSecret = curve.calculateAgreement(remoteKey, ratchet.ephemeralKeyPair.privKey);
         const masterKey = crypto.deriveSecrets(sharedSecret, ratchet.rootKey,
-                                               Buffer.from("WhisperRatchet"), /*chunks*/ 2);
+            Buffer.from("WhisperRatchet"), /*chunks*/ 2);
         const chainKey = sending ? ratchet.ephemeralKeyPair.pubKey : remoteKey;
         session.addChain(chainKey, {
             messageKeys: {},

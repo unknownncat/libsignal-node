@@ -1,19 +1,22 @@
-export function decrypt(
-  key: Uint8Array,
-  ciphertext: Uint8Array,
-  iv: Uint8Array
-): Promise<Uint8Array>;
+export function decrypt(key: Buffer, ciphertext: Buffer, iv: Buffer): Buffer;
 
-export function encrypt(
-  key: Uint8Array,
-  plaintext: Uint8Array,
-  iv: Uint8Array
-): Promise<Buffer>;
+export function encrypt(key: Buffer, plaintext: Buffer, iv: Buffer): Buffer;
 
-export function calculateMAC(key: Buffer, data: Uint8Array): Uint8Array;
+export function calculateMAC(key: Buffer, data: Buffer): Buffer;
+
+export function hash(data: Buffer): Buffer;
 
 export function deriveSecrets(
-  key: Uint8Array,
+  key: Buffer,
   salt: Buffer,
-  info: Buffer
-): [Buffer, Buffer];
+  info: Buffer,
+  chunks?: 1 | 2 | 3
+): Buffer[];
+
+export function verifyMAC(
+  data: Buffer,
+  key: Buffer,
+  mac: Buffer,
+  length: number
+): void;
+
