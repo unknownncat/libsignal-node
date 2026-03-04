@@ -44,6 +44,15 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
 
   exports.Set("assembleWhisperFrame", Napi::Function::New(env, AssembleWhisperFrame));
   exports.Set("assembleWhisperFrameAsync", Napi::Function::New(env, AssembleWhisperFrameAsync));
+
+  exports.Set("protobufEncodeWhisperMessage",
+              Napi::Function::New(env, ProtobufEncodeWhisperMessage));
+  exports.Set("protobufDecodeWhisperMessage",
+              Napi::Function::New(env, ProtobufDecodeWhisperMessage));
+  exports.Set("protobufEncodePreKeyWhisperMessage",
+              Napi::Function::New(env, ProtobufEncodePreKeyWhisperMessage));
+  exports.Set("protobufDecodePreKeyWhisperMessage",
+              Napi::Function::New(env, ProtobufDecodePreKeyWhisperMessage));
   return exports;
 }
 

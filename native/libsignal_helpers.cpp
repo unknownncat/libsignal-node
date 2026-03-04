@@ -23,7 +23,15 @@ Napi::Object EnsureObject(const Napi::Value& value, const char* name) {
 Napi::Buffer<uint8_t> EnsureBuffer(const Napi::Value& value, const char* name) {
   Napi::Env env = value.Env();
   if (!value.IsBuffer()) {
-    Napi::TypeError::New(env, std::string(name) + " must be a Buffer").ThrowAsJavaScriptException();
+    if (value.IsTypedArray()) {
+      Napi::TypedArray typed = value.As<Napi::TypedArray>();
+      if (typed.TypedArrayType() == napi_uint8_array) {
+        Napi::Uint8Array input = value.As<Napi::Uint8Array>();
+        return Napi::Buffer<uint8_t>::Copy(env, input.Data(), input.ByteLength());
+      }
+    }
+    Napi::TypeError::New(env, std::string(name) + " must be a Uint8Array")
+        .ThrowAsJavaScriptException();
     return Napi::Buffer<uint8_t>();
   }
   return value.As<Napi::Buffer<uint8_t>>();

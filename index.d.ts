@@ -1,16 +1,16 @@
-import type { KeyPairType } from './src/curve';
+import type { KeyPairType } from './src/curve.js';
 
 export interface E2ESession {
   registrationId: number;
-  identityKey: Buffer;
+  identityKey: Uint8Array;
   signedPreKey: {
     keyId: number;
-    publicKey: Buffer;
-    signature: Buffer;
+    publicKey: Uint8Array;
+    signature: Uint8Array;
   };
   preKey?: {
     keyId: number;
-    publicKey: Buffer;
+    publicKey: Uint8Array;
   };
 }
 
@@ -28,7 +28,7 @@ export interface SignalStorage {
   storeSession(id: string, session: SessionRecord): Promise<void> | void;
   isTrustedIdentity(
     identifier: string,
-    identityKey: Buffer | Uint8Array,
+    identityKey: Uint8Array,
     direction?: number
   ): Promise<boolean> | boolean;
   loadPreKey(
@@ -60,11 +60,11 @@ export class SessionRecord {
 
 export class SessionCipher {
   constructor(storage: SignalStorage, remoteAddress: ProtocolAddress);
-  public decryptPreKeyWhisperMessage(ciphertext: Buffer): Promise<Buffer>;
-  public decryptWhisperMessage(ciphertext: Buffer): Promise<Buffer>;
+  public decryptPreKeyWhisperMessage(ciphertext: Uint8Array): Promise<Uint8Array>;
+  public decryptWhisperMessage(ciphertext: Uint8Array): Promise<Uint8Array>;
   public encrypt(
-    data: Buffer | Uint8Array
-  ): Promise<{ type: number; body: Buffer; registrationId: number }>;
+    data: Uint8Array
+  ): Promise<{ type: number; body: Uint8Array; registrationId: number }>;
   public hasOpenSession(): Promise<boolean>;
   public closeOpenSession(): Promise<void>;
 }
@@ -77,13 +77,12 @@ export class SessionBuilder {
 export class SignalError extends Error {}
 export class UntrustedIdentityKeyError extends SignalError {
   addr: string;
-  identityKey: Buffer | Uint8Array;
+  identityKey: Uint8Array;
 }
 export class SessionError extends SignalError {}
 export class MessageCounterError extends SessionError {}
 export class PreKeyError extends SessionError {}
 
-export const crypto: typeof import('./src/crypto');
-export const curve: typeof import('./src/curve');
-export const keyhelper: typeof import('./src/keyhelper');
-
+export * as crypto from './src/crypto.js';
+export * as curve from './src/curve.js';
+export * as keyhelper from './src/keyhelper.js';

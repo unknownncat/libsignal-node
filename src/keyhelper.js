@@ -1,49 +1,55 @@
-// vim: ts=4:sw=4:expandtab
+import * as curve from './curve.js';
+import native from './native.js';
+import { assertUint8Array } from './bytes.js';
 
-const curve = require('./curve');
-const nodeCrypto = require('crypto');
-const { default: native } = require('./native');
-
-function isNonNegativeInteger(n) {
-    return (typeof n === 'number' && (n % 1) === 0 && n >= 0);
+function isNonNegativeInteger(number) {
+  return typeof number === 'number' && number % 1 === 0 && number >= 0;
 }
 
-exports.generateIdentityKeyPair = curve.generateKeyPair;
+export const generateIdentityKeyPair = curve.generateKeyPair;
 
-exports.generateRegistrationId = function () {
-    if (native && typeof native.generateRegistrationId14 === 'function') {
-        return native.generateRegistrationId14();
-    }
-    const registrationId = nodeCrypto.randomBytes(2).readUInt16LE(0);
-    return registrationId & 0x3fff;
-};
+export function generateRegistrationId() {
+  return native.generateRegistrationId14();
+}
 
-exports.generateSignedPreKey = function (identityKeyPair, signedKeyId) {
-    if (!(identityKeyPair.privKey instanceof Buffer) ||
-        identityKeyPair.privKey.byteLength != 32 ||
-        !(identityKeyPair.pubKey instanceof Buffer) ||
-        identityKeyPair.pubKey.byteLength != 33) {
-        throw new TypeError('Invalid argument for identityKeyPair');
-    }
-    if (!isNonNegativeInteger(signedKeyId)) {
-        throw new TypeError('Invalid argument for signedKeyId: ' + signedKeyId);
-    }
-    const keyPair = curve.generateKeyPair();
-    const sig = curve.calculateSignature(identityKeyPair.privKey, keyPair.pubKey);
-    return {
-        keyId: signedKeyId,
-        keyPair: keyPair,
-        signature: sig
-    };
-};
+export function generateSignedPreKey(identityKeyPair, signedKeyId) {
+  if (
+    !identityKeyPair ||
+    !(identityKeyPair.privKey instanceof Uint8Array) ||
+    identityKeyPair.privKey.byteLength !== 32 ||
+    !(identityKeyPair.pubKey instanceof Uint8Array) ||
+    identityKeyPair.pubKey.byteLength !== 33
+  ) {
+    throw new TypeError('Invalid argument for identityKeyPair');
+  }
+  if (!isNonNegativeInteger(signedKeyId)) {
+    throw new TypeError(`Invalid argument for signedKeyId: ${signedKeyId}`);
+  }
 
-exports.generatePreKey = function (keyId) {
-    if (!isNonNegativeInteger(keyId)) {
-        throw new TypeError('Invalid argument for keyId: ' + keyId);
-    }
-    const keyPair = curve.generateKeyPair();
-    return {
-        keyId,
-        keyPair
-    };
+  const keyPair = curve.generateKeyPair();
+  const signature = curve.calculateSignature(identityKeyPair.privKey, keyPair.pubKey);
+  assertUint8Array(signature, 'signature');
+
+  return {
+    keyId: signedKeyId,
+    keyPair,
+    signature,
+  };
+}
+
+export function generatePreKey(keyId) {
+  if (!isNonNegativeInteger(keyId)) {
+    throw new TypeError(`Invalid argument for keyId: ${keyId}`);
+  }
+  return {
+    keyId,
+    keyPair: curve.generateKeyPair(),
+  };
+}
+
+export default {
+  generateIdentityKeyPair,
+  generateRegistrationId,
+  generateSignedPreKey,
+  generatePreKey,
 };

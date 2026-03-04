@@ -1,33 +1,31 @@
-// vim: ts=4:sw=4:expandtab
+export class SignalError extends Error {}
 
-exports.SignalError = class SignalError extends Error {};
+export class UntrustedIdentityKeyError extends SignalError {
+  constructor(addr, identityKey) {
+    super();
+    this.name = 'UntrustedIdentityKeyError';
+    this.addr = addr;
+    this.identityKey = identityKey;
+  }
+}
 
-exports.UntrustedIdentityKeyError = class UntrustedIdentityKeyError extends exports.SignalError {
-    constructor(addr, identityKey) {
-        super();
-        this.name = 'UntrustedIdentityKeyError';
-        this.addr = addr;
-        this.identityKey = identityKey;
-    }
-};
+export class SessionError extends SignalError {
+  constructor(message) {
+    super(message);
+    this.name = 'SessionError';
+  }
+}
 
-exports.SessionError = class SessionError extends exports.SignalError {
-    constructor(message) {
-        super(message);
-        this.name = 'SessionError';
-    }
-};
+export class MessageCounterError extends SessionError {
+  constructor(message) {
+    super(message);
+    this.name = 'MessageCounterError';
+  }
+}
 
-exports.MessageCounterError = class MessageCounterError extends exports.SessionError {
-    constructor(message) {
-        super(message);
-        this.name = 'MessageCounterError';
-    }
-};
-
-exports.PreKeyError = class PreKeyError extends exports.SessionError {
-    constructor(message) {
-        super(message);
-        this.name = 'PreKeyError';
-    }
-};
+export class PreKeyError extends SessionError {
+  constructor(message) {
+    super(message);
+    this.name = 'PreKeyError';
+  }
+}

@@ -6,18 +6,23 @@
       "intelliSenseMode": "windows-msvc-x64",
       "cppStandard": "c++17",
       "defines": [
-        "NODE_ADDON_API_CPP_EXCEPTIONS"
+        "NODE_ADDON_API_CPP_EXCEPTIONS",
+        "PROTOBUF_USE_DLLS"
       ],
       "includePath": [
         "${workspaceFolder}/native",
+        "${workspaceFolder}/native/proto",
         "${workspaceFolder}/node_modules/node-addon-api",
+        "${env:USERPROFILE}/vcpkg/installed/x64-windows/include",
         "${env:LOCALAPPDATA}/node-gyp/Cache/25.7.0/include/node",
         "${env:LOCALAPPDATA}/node-gyp/Cache/**/include/node"
       ],
       "browse": {
         "path": [
           "${workspaceFolder}/native",
+          "${workspaceFolder}/native/proto",
           "${workspaceFolder}/node_modules/node-addon-api",
+          "${env:USERPROFILE}/vcpkg/installed/x64-windows/include",
           "${env:LOCALAPPDATA}/node-gyp/Cache/25.7.0/include/node",
           "${env:LOCALAPPDATA}/node-gyp/Cache/**/include/node"
         ],
@@ -26,4 +31,3 @@
     }
   ]
 }
-

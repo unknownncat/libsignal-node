@@ -1,10 +1,16 @@
-'use strict';
+export * as crypto from './src/crypto.js';
+export * as curve from './src/curve.js';
+export * as keyhelper from './src/keyhelper.js';
 
-exports.crypto = require('./src/crypto');
-exports.curve = require('./src/curve');
-exports.keyhelper = require('./src/keyhelper');
-exports.ProtocolAddress = require('./src/protocol_address');
-exports.SessionBuilder = require('./src/session_builder');
-exports.SessionCipher = require('./src/session_cipher');
-exports.SessionRecord = require('./src/session_record');
-Object.assign(exports, require('./src/errors'));
+export { default as ProtocolAddress } from './src/protocol_address.js';
+export { default as SessionBuilder } from './src/session_builder.js';
+export { default as SessionCipher } from './src/session_cipher.js';
+export { default as SessionRecord } from './src/session_record.js';
+
+export {
+  SignalError,
+  UntrustedIdentityKeyError,
+  SessionError,
+  MessageCounterError,
+  PreKeyError,
+} from './src/errors.js';

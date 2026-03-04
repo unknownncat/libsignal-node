@@ -1,12 +1,9 @@
-'use strict';
+import { createRequire } from 'node:module';
 
-let nativeAddon = null;
-
-try {
-    nativeAddon = require('../build/Release/libsignal_native.node');
-} catch (_) {
-    nativeAddon = null;
+const require = createRequire(import.meta.url);
+if (typeof global.require !== 'function') {
+  global.require = require;
 }
+const nativeAddon = require('../build/Release/libsignal_native.node');
 
-module.exports = nativeAddon;
-
+export default nativeAddon;

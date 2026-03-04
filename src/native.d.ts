@@ -4,42 +4,42 @@ export interface NativeProtocolAddressParsed {
 }
 
 export interface NativeKeyPairLike {
-  pubKey: Buffer;
-  privKey: Buffer;
+  pubKey: Uint8Array;
+  privKey: Uint8Array;
 }
 
 export interface NativeChainKeyState {
   counter: number;
-  key?: Buffer;
+  key?: Uint8Array;
 }
 
 export interface NativeSessionChainState {
   chainKey: NativeChainKeyState;
   chainType: number;
-  messageKeys: Record<string, Buffer>;
+  messageKeys: Record<string, Uint8Array>;
 }
 
 export type NativeSessionChains = Record<string, NativeSessionChainState>;
 
 export interface NativeSessionIndexInfo {
-  baseKey: Buffer;
+  baseKey: Uint8Array;
   baseKeyType: number;
   closed: number;
   used: number;
   created: number;
-  remoteIdentityKey: Buffer;
+  remoteIdentityKey: Uint8Array;
 }
 
 export interface NativeSessionCurrentRatchet {
   ephemeralKeyPair: NativeKeyPairLike;
-  lastRemoteEphemeralKey: Buffer;
+  lastRemoteEphemeralKey: Uint8Array;
   previousCounter: number;
-  rootKey: Buffer;
+  rootKey: Uint8Array;
 }
 
 export interface NativePendingPreKey {
   signedKeyId: number;
-  baseKey: Buffer;
+  baseKey: Uint8Array;
   preKeyId?: number;
 }
 
@@ -52,40 +52,54 @@ export interface NativeSessionEntryLike {
 
 export type NativeSessionMap = Record<string, NativeSessionEntryLike>;
 
+export interface NativeWhisperMessageLike {
+  ephemeralKey?: Uint8Array;
+  counter?: number;
+  previousCounter?: number;
+  ciphertext?: Uint8Array;
+}
+
+export interface NativePreKeyWhisperMessageLike {
+  registrationId?: number;
+  preKeyId?: number;
+  signedPreKeyId?: number;
+  baseKey?: Uint8Array;
+  identityKey?: Uint8Array;
+  message?: Uint8Array;
+}
+
 export interface NativeAddon {
   generateRegistrationId14(): number;
   parseProtocolAddress(encodedAddress: string): NativeProtocolAddressParsed;
 
-  encryptAes256Cbc(key: Buffer, data: Buffer, iv: Buffer): Buffer;
-  decryptAes256Cbc(key: Buffer, data: Buffer, iv: Buffer): Buffer;
-  calculateMacSha256(key: Buffer, data: Buffer): Buffer;
-  hashSha512(data: Buffer): Buffer;
-  timingSafeEqual(a: Buffer, b: Buffer): boolean;
-  deriveSecrets(input: Buffer, salt: Buffer, info: Buffer, chunks?: 1 | 2 | 3): Buffer[];
+  encryptAes256Cbc(key: Uint8Array, data: Uint8Array, iv: Uint8Array): Uint8Array;
+  decryptAes256Cbc(key: Uint8Array, data: Uint8Array, iv: Uint8Array): Uint8Array;
+  calculateMacSha256(key: Uint8Array, data: Uint8Array): Uint8Array;
+  hashSha512(data: Uint8Array): Uint8Array;
+  timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean;
+  deriveSecrets(
+    input: Uint8Array,
+    salt: Uint8Array,
+    info: Uint8Array,
+    chunks?: 1 | 2 | 3
+  ): Uint8Array[];
   numericFingerprint(
     localId: string,
-    localKey: Buffer,
+    localKey: Uint8Array,
     remoteId: string,
-    remoteKey: Buffer,
+    remoteKey: Uint8Array,
     iterations: number
   ): string;
 
   queueJobByBucket<T = unknown>(bucket: string, awaitable: () => T | Promise<T>): Promise<T>;
 
-  sessionEntryAddChain(
-    chains: NativeSessionChains,
-    key: Buffer,
-    value: NativeSessionChainState
-  ): void;
-  sessionEntryGetChain(
-    chains: NativeSessionChains,
-    key: Buffer
-  ): NativeSessionChainState | undefined;
-  sessionEntryDeleteChain(chains: NativeSessionChains, key: Buffer): void;
+  sessionEntryAddChain(chains: NativeSessionChains, key: Uint8Array, value: NativeSessionChainState): void;
+  sessionEntryGetChain(chains: NativeSessionChains, key: Uint8Array): NativeSessionChainState | undefined;
+  sessionEntryDeleteChain(chains: NativeSessionChains, key: Uint8Array): void;
 
   sessionRecordGetSessionByBaseKey(
     sessions: NativeSessionMap,
-    key: Buffer,
+    key: Uint8Array,
     ourBaseKeyType: number
   ): NativeSessionEntryLike | undefined;
   sessionRecordGetOpenSession(sessions: NativeSessionMap): NativeSessionEntryLike | undefined;
@@ -96,18 +110,18 @@ export interface NativeAddon {
 
   buildSessionSharedSecret(
     isInitiator: boolean,
-    a1: Buffer,
-    a2: Buffer,
-    a3: Buffer,
-    a4?: Buffer
-  ): Buffer;
+    a1: Uint8Array,
+    a2: Uint8Array,
+    a3: Uint8Array,
+    a4?: Uint8Array
+  ): Uint8Array;
   buildSessionSharedSecretAsync(
     isInitiator: boolean,
-    a1: Buffer,
-    a2: Buffer,
-    a3: Buffer,
-    a4?: Buffer
-  ): Promise<Buffer>;
+    a1: Uint8Array,
+    a2: Uint8Array,
+    a3: Uint8Array,
+    a4?: Uint8Array
+  ): Promise<Uint8Array>;
 
   fillMessageKeys(chain: NativeSessionChainState, counter: number): void;
 
@@ -115,32 +129,38 @@ export interface NativeAddon {
   decodeTupleByte(byte: number): [number, number];
 
   buildWhisperMacInput(
-    leftIdentityKey: Buffer,
-    rightIdentityKey: Buffer,
+    leftIdentityKey: Uint8Array,
+    rightIdentityKey: Uint8Array,
     versionByte: number,
-    messageProto: Buffer
-  ): Buffer;
+    messageProto: Uint8Array
+  ): Uint8Array;
   buildWhisperMacInputAsync(
-    leftIdentityKey: Buffer,
-    rightIdentityKey: Buffer,
+    leftIdentityKey: Uint8Array,
+    rightIdentityKey: Uint8Array,
     versionByte: number,
-    messageProto: Buffer
-  ): Promise<Buffer>;
+    messageProto: Uint8Array
+  ): Promise<Uint8Array>;
 
   assembleWhisperFrame(
     versionByte: number,
-    messageProto: Buffer,
-    mac: Buffer,
+    messageProto: Uint8Array,
+    mac: Uint8Array,
     macLength?: number
-  ): Buffer;
+  ): Uint8Array;
   assembleWhisperFrameAsync(
     versionByte: number,
-    messageProto: Buffer,
-    mac: Buffer,
+    messageProto: Uint8Array,
+    mac: Uint8Array,
     macLength?: number
-  ): Promise<Buffer>;
+  ): Promise<Uint8Array>;
+
+  protobufEncodeWhisperMessage(message: NativeWhisperMessageLike): Uint8Array;
+  protobufDecodeWhisperMessage(data: Uint8Array): NativeWhisperMessageLike;
+
+  protobufEncodePreKeyWhisperMessage(message: NativePreKeyWhisperMessageLike): Uint8Array;
+  protobufDecodePreKeyWhisperMessage(data: Uint8Array): NativePreKeyWhisperMessageLike;
 }
 
-declare const nativeAddon: NativeAddon | null;
+declare const nativeAddon: NativeAddon;
 
 export default nativeAddon;

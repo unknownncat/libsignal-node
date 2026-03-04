@@ -1,10 +1,33 @@
-'use strict';
+import native from './native.js';
 
-const {
-    textsecure: {
-        WhisperMessage,
-        PreKeyWhisperMessage
-    }
-} = require('./WhisperTextProtocol.js');
+export const WhisperMessage = {
+  create(properties = {}) {
+    return { ...properties };
+  },
+  encode(message) {
+    return {
+      finish() {
+        return native.protobufEncodeWhisperMessage(message);
+      },
+    };
+  },
+  decode(data) {
+    return native.protobufDecodeWhisperMessage(data);
+  },
+};
 
-module.exports = { WhisperMessage, PreKeyWhisperMessage };
+export const PreKeyWhisperMessage = {
+  create(properties = {}) {
+    return { ...properties };
+  },
+  encode(message) {
+    return {
+      finish() {
+        return native.protobufEncodePreKeyWhisperMessage(message);
+      },
+    };
+  },
+  decode(data) {
+    return native.protobufDecodePreKeyWhisperMessage(data);
+  },
+};

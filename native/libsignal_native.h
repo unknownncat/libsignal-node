@@ -80,6 +80,11 @@ Napi::Value BuildWhisperMacInputAsync(const Napi::CallbackInfo& info);
 Napi::Value AssembleWhisperFrame(const Napi::CallbackInfo& info);
 Napi::Value AssembleWhisperFrameAsync(const Napi::CallbackInfo& info);
 
+Napi::Value ProtobufEncodeWhisperMessage(const Napi::CallbackInfo& info);
+Napi::Value ProtobufDecodeWhisperMessage(const Napi::CallbackInfo& info);
+Napi::Value ProtobufEncodePreKeyWhisperMessage(const Napi::CallbackInfo& info);
+Napi::Value ProtobufDecodePreKeyWhisperMessage(const Napi::CallbackInfo& info);
+
 Napi::Object Init(Napi::Env env, Napi::Object exports);
 
 }  // namespace libsignal_native

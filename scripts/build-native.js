@@ -1,22 +1,41 @@
-'use strict';
-
-const { spawnSync } = require('child_process');
+import { spawnSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 function runNodeGyp() {
-    const env = Object.assign({}, process.env);
-    delete env.npm_config_node_gyp;
-    return spawnSync('node-gyp rebuild --release -j max', {
-        env,
-        stdio: 'inherit',
-        shell: true
-    });
+  const env = { ...process.env };
+  delete env.npm_config_node_gyp;
+  return spawnSync('node-gyp rebuild --release -j max', {
+    env,
+    stdio: 'inherit',
+    shell: true,
+  });
 }
 
-const strict = process.argv.includes('--strict');
+function copyWindowsRuntimeDlls() {
+  if (process.platform !== 'win32' || !process.env.USERPROFILE) {
+    return;
+  }
+
+  const vcpkgBinDir = join(process.env.USERPROFILE, 'vcpkg', 'installed', 'x64-windows', 'bin');
+  if (!existsSync(vcpkgBinDir)) {
+    return;
+  }
+
+  const releaseDir = join('build', 'Release');
+  mkdirSync(releaseDir, { recursive: true });
+
+  for (const name of readdirSync(vcpkgBinDir)) {
+    if (!name.endsWith('.dll')) {
+      continue;
+    }
+    copyFileSync(join(vcpkgBinDir, name), join(releaseDir, name));
+  }
+}
+
 const result = runNodeGyp();
 if (result.status !== 0) {
-    if (strict) {
-        process.exit(result.status || 1);
-    }
-    console.warn('native addon build skipped');
+  process.exit(result.status || 1);
 }
+
+copyWindowsRuntimeDlls();

@@ -1,4 +1,4 @@
-import type { KeyPairType } from './curve';
+import type { KeyPairType } from './curve.js';
 
 export function generateIdentityKeyPair(): KeyPairType;
 
@@ -10,11 +10,10 @@ export function generateSignedPreKey(
 ): {
   keyId: number;
   keyPair: KeyPairType;
-  signature: Buffer;
+  signature: Uint8Array;
 };
 
 export function generatePreKey(keyId: number): {
   keyId: number;
   keyPair: KeyPairType;
 };
-

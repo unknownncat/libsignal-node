@@ -7,11 +7,13 @@
         "native/libsignal_queue_session.cpp",
         "native/libsignal_crypto.cpp",
         "native/libsignal_async.cpp",
-        "native/libsignal_native.cpp"
+        "native/libsignal_native.cpp",
+        "native/proto/WhisperTextProtocol.pb.cc"
       ],
       "defines": [ "NODE_ADDON_API_CPP_EXCEPTIONS" ],
       "include_dirs": [
-        "<!@(node -p \"require('node-addon-api').include\")"
+        "<!@(node -p \"require('node-addon-api').include\")",
+        "<!(node -p \"require('path').join(process.env.USERPROFILE, 'vcpkg', 'installed', 'x64-windows', 'include')\")"
       ],
       "dependencies": [
         "<!(node -p \"require('node-addon-api').gyp\")"
@@ -19,6 +21,13 @@
       "cflags_cc!": [ "-fno-exceptions" ],
       "conditions": [
         [ "OS=='win'", {
+          "defines": [ "PROTOBUF_USE_DLLS" ],
+          "libraries": [
+            "<!(node -p \"require('path').join(process.env.USERPROFILE, 'vcpkg', 'installed', 'x64-windows', 'lib', 'libprotobuf.lib')\")",
+            "<!(node -p \"require('path').join(process.env.USERPROFILE, 'vcpkg', 'installed', 'x64-windows', 'lib', 'abseil_dll.lib')\")",
+            "<!(node -p \"require('path').join(process.env.USERPROFILE, 'vcpkg', 'installed', 'x64-windows', 'lib', 'utf8_validity.lib')\")",
+            "<!(node -p \"require('path').join(process.env.USERPROFILE, 'vcpkg', 'installed', 'x64-windows', 'lib', 'utf8_range.lib')\")"
+          ],
           "msvs_settings": {
             "VCCLCompilerTool": {
               "ExceptionHandling": 1,

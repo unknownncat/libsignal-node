@@ -1,4 +1,5 @@
 #include "libsignal_native.h"
+#include "proto/WhisperTextProtocol.pb.h"
 
 #include <uv.h>
 
@@ -213,6 +214,40 @@ Napi::Value DeriveSecrets(const Napi::CallbackInfo& info) {
 }
 
 namespace {
+constexpr uint32_t kWhisperFieldEphemeralKey =
+    textsecure::WhisperMessage::kEphemeralKeyFieldNumber;
+constexpr uint32_t kWhisperFieldCounter = textsecure::WhisperMessage::kCounterFieldNumber;
+constexpr uint32_t kWhisperFieldPreviousCounter =
+    textsecure::WhisperMessage::kPreviousCounterFieldNumber;
+constexpr uint32_t kWhisperFieldCiphertext =
+    textsecure::WhisperMessage::kCiphertextFieldNumber;
+
+constexpr uint32_t kPreKeyFieldPreKeyId =
+    textsecure::PreKeyWhisperMessage::kPreKeyIdFieldNumber;
+constexpr uint32_t kPreKeyFieldBaseKey =
+    textsecure::PreKeyWhisperMessage::kBaseKeyFieldNumber;
+constexpr uint32_t kPreKeyFieldIdentityKey =
+    textsecure::PreKeyWhisperMessage::kIdentityKeyFieldNumber;
+constexpr uint32_t kPreKeyFieldMessage =
+    textsecure::PreKeyWhisperMessage::kMessageFieldNumber;
+constexpr uint32_t kPreKeyFieldRegistrationId =
+    textsecure::PreKeyWhisperMessage::kRegistrationIdFieldNumber;
+constexpr uint32_t kPreKeyFieldSignedPreKeyId =
+    textsecure::PreKeyWhisperMessage::kSignedPreKeyIdFieldNumber;
+
+static_assert(kWhisperFieldEphemeralKey == 1, "Unexpected WhisperMessage.ephemeralKey field id");
+static_assert(kWhisperFieldCounter == 2, "Unexpected WhisperMessage.counter field id");
+static_assert(kWhisperFieldPreviousCounter == 3,
+              "Unexpected WhisperMessage.previousCounter field id");
+static_assert(kWhisperFieldCiphertext == 4, "Unexpected WhisperMessage.ciphertext field id");
+static_assert(kPreKeyFieldPreKeyId == 1, "Unexpected PreKeyWhisperMessage.preKeyId field id");
+static_assert(kPreKeyFieldBaseKey == 2, "Unexpected PreKeyWhisperMessage.baseKey field id");
+static_assert(kPreKeyFieldIdentityKey == 3, "Unexpected PreKeyWhisperMessage.identityKey field id");
+static_assert(kPreKeyFieldMessage == 4, "Unexpected PreKeyWhisperMessage.message field id");
+static_assert(kPreKeyFieldRegistrationId == 5,
+              "Unexpected PreKeyWhisperMessage.registrationId field id");
+static_assert(kPreKeyFieldSignedPreKeyId == 6,
+              "Unexpected PreKeyWhisperMessage.signedPreKeyId field id");
 
 uint32_t EncodedChunk(const uint8_t* hash, std::size_t offset) {
   const uint64_t value = (static_cast<uint64_t>(hash[offset]) << 32) |
@@ -516,6 +551,257 @@ Napi::Value AssembleWhisperFrame(const Napi::CallbackInfo& info) {
   std::memcpy(out.Data() + 1, messageProto.Data(), messageProto.Length());
   std::memcpy(out.Data() + 1 + messageProto.Length(), mac.Data(), macLength);
   return out;
+}
+
+namespace {
+
+bool HasValue(const Napi::Object& object, const char* key) {
+  if (!object.Has(key)) {
+    return false;
+  }
+  const Napi::Value value = object.Get(key);
+  return !value.IsUndefined() && !value.IsNull();
+}
+
+void SetProtoBytes(std::string* target, const Napi::Buffer<uint8_t>& value) {
+  target->assign(reinterpret_cast<const char*>(value.Data()), value.Length());
+}
+
+Napi::Buffer<uint8_t> CopyProtoBytesToBuffer(const Napi::Env& env, const std::string& value) {
+  if (value.empty()) {
+    return Napi::Buffer<uint8_t>::New(env, 0);
+  }
+  return Napi::Buffer<uint8_t>::Copy(
+      env, reinterpret_cast<const uint8_t*>(value.data()), value.size());
+}
+
+template <typename ProtoMessage>
+bool SerializeProtoMessage(const Napi::Env& env,
+                           const ProtoMessage& message,
+                           const char* errorMessage,
+                           Napi::Buffer<uint8_t>* out) {
+  const size_t byteSize = message.ByteSizeLong();
+  if (byteSize > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    Napi::RangeError::New(env, "Protobuf message too large").ThrowAsJavaScriptException();
+    return false;
+  }
+
+  *out = Napi::Buffer<uint8_t>::New(env, byteSize);
+  if (byteSize == 0) {
+    return true;
+  }
+  if (!message.SerializeToArray(out->Data(), static_cast<int>(byteSize))) {
+    Napi::Error::New(env, errorMessage).ThrowAsJavaScriptException();
+    return false;
+  }
+  return true;
+}
+
+template <typename ProtoMessage>
+bool ParseProtoMessage(const Napi::Env& env,
+                       const Napi::Buffer<uint8_t>& data,
+                       const char* errorMessage,
+                       ProtoMessage* out) {
+  if (data.Length() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    Napi::RangeError::New(env, "Protobuf message too large").ThrowAsJavaScriptException();
+    return false;
+  }
+  if (!out->ParseFromArray(data.Data(), static_cast<int>(data.Length()))) {
+    Napi::Error::New(env, errorMessage).ThrowAsJavaScriptException();
+    return false;
+  }
+  return true;
+}
+
+}  // namespace
+
+Napi::Value ProtobufEncodeWhisperMessage(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 1) {
+    Napi::TypeError::New(env, "protobufEncodeWhisperMessage(message) requires 1 argument")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  Napi::Object message = EnsureObject(info[0], "message");
+  if (env.IsExceptionPending()) {
+    return env.Null();
+  }
+
+  textsecure::WhisperMessage proto;
+
+  if (HasValue(message, "ephemeralKey")) {
+    Napi::Buffer<uint8_t> ephemeralKey = EnsureBuffer(message.Get("ephemeralKey"), "message.ephemeralKey");
+    if (env.IsExceptionPending()) {
+      return env.Null();
+    }
+    SetProtoBytes(proto.mutable_ephemeralkey(), ephemeralKey);
+  }
+
+  if (HasValue(message, "counter")) {
+    Napi::Value counterValue = message.Get("counter");
+    if (!counterValue.IsNumber()) {
+      Napi::TypeError::New(env, "message.counter must be a number").ThrowAsJavaScriptException();
+      return env.Null();
+    }
+    proto.set_counter(counterValue.As<Napi::Number>().Uint32Value());
+  }
+
+  if (HasValue(message, "previousCounter")) {
+    Napi::Value previousCounterValue = message.Get("previousCounter");
+    if (!previousCounterValue.IsNumber()) {
+      Napi::TypeError::New(env, "message.previousCounter must be a number")
+          .ThrowAsJavaScriptException();
+      return env.Null();
+    }
+    proto.set_previouscounter(previousCounterValue.As<Napi::Number>().Uint32Value());
+  }
+
+  if (HasValue(message, "ciphertext")) {
+    Napi::Buffer<uint8_t> ciphertext = EnsureBuffer(message.Get("ciphertext"), "message.ciphertext");
+    if (env.IsExceptionPending()) {
+      return env.Null();
+    }
+    SetProtoBytes(proto.mutable_ciphertext(), ciphertext);
+  }
+
+  Napi::Buffer<uint8_t> out;
+  if (!SerializeProtoMessage(env, proto, "Failed to serialize WhisperMessage protobuf", &out)) {
+    return env.Null();
+  }
+  return out;
+}
+
+Napi::Value ProtobufDecodeWhisperMessage(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 1) {
+    Napi::TypeError::New(env, "protobufDecodeWhisperMessage(data) requires 1 argument")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  Napi::Buffer<uint8_t> data = EnsureBuffer(info[0], "data");
+  if (env.IsExceptionPending()) {
+    return env.Null();
+  }
+
+  textsecure::WhisperMessage proto;
+  if (!ParseProtoMessage(env, data, "Invalid WhisperMessage protobuf", &proto)) {
+    return env.Null();
+  }
+
+  Napi::Object message = Napi::Object::New(env);
+  message.Set("ephemeralKey", CopyProtoBytesToBuffer(env, proto.ephemeralkey()));
+  message.Set("counter", Napi::Number::New(env, proto.counter()));
+  message.Set("previousCounter", Napi::Number::New(env, proto.previouscounter()));
+  message.Set("ciphertext", CopyProtoBytesToBuffer(env, proto.ciphertext()));
+
+  return message;
+}
+
+Napi::Value ProtobufEncodePreKeyWhisperMessage(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 1) {
+    Napi::TypeError::New(env, "protobufEncodePreKeyWhisperMessage(message) requires 1 argument")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  Napi::Object message = EnsureObject(info[0], "message");
+  if (env.IsExceptionPending()) {
+    return env.Null();
+  }
+
+  textsecure::PreKeyWhisperMessage proto;
+
+  if (HasValue(message, "preKeyId")) {
+    Napi::Value preKeyIdValue = message.Get("preKeyId");
+    if (!preKeyIdValue.IsNumber()) {
+      Napi::TypeError::New(env, "message.preKeyId must be a number").ThrowAsJavaScriptException();
+      return env.Null();
+    }
+    proto.set_prekeyid(preKeyIdValue.As<Napi::Number>().Uint32Value());
+  }
+
+  if (HasValue(message, "baseKey")) {
+    Napi::Buffer<uint8_t> baseKey = EnsureBuffer(message.Get("baseKey"), "message.baseKey");
+    if (env.IsExceptionPending()) {
+      return env.Null();
+    }
+    SetProtoBytes(proto.mutable_basekey(), baseKey);
+  }
+
+  if (HasValue(message, "identityKey")) {
+    Napi::Buffer<uint8_t> identityKey =
+        EnsureBuffer(message.Get("identityKey"), "message.identityKey");
+    if (env.IsExceptionPending()) {
+      return env.Null();
+    }
+    SetProtoBytes(proto.mutable_identitykey(), identityKey);
+  }
+
+  if (HasValue(message, "message")) {
+    Napi::Buffer<uint8_t> innerMessage = EnsureBuffer(message.Get("message"), "message.message");
+    if (env.IsExceptionPending()) {
+      return env.Null();
+    }
+    SetProtoBytes(proto.mutable_message(), innerMessage);
+  }
+
+  if (HasValue(message, "registrationId")) {
+    Napi::Value registrationIdValue = message.Get("registrationId");
+    if (!registrationIdValue.IsNumber()) {
+      Napi::TypeError::New(env, "message.registrationId must be a number")
+          .ThrowAsJavaScriptException();
+      return env.Null();
+    }
+    proto.set_registrationid(registrationIdValue.As<Napi::Number>().Uint32Value());
+  }
+
+  if (HasValue(message, "signedPreKeyId")) {
+    Napi::Value signedPreKeyIdValue = message.Get("signedPreKeyId");
+    if (!signedPreKeyIdValue.IsNumber()) {
+      Napi::TypeError::New(env, "message.signedPreKeyId must be a number")
+          .ThrowAsJavaScriptException();
+      return env.Null();
+    }
+    proto.set_signedprekeyid(signedPreKeyIdValue.As<Napi::Number>().Uint32Value());
+  }
+
+  Napi::Buffer<uint8_t> out;
+  if (!SerializeProtoMessage(env, proto, "Failed to serialize PreKeyWhisperMessage protobuf", &out)) {
+    return env.Null();
+  }
+  return out;
+}
+
+Napi::Value ProtobufDecodePreKeyWhisperMessage(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 1) {
+    Napi::TypeError::New(env, "protobufDecodePreKeyWhisperMessage(data) requires 1 argument")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  Napi::Buffer<uint8_t> data = EnsureBuffer(info[0], "data");
+  if (env.IsExceptionPending()) {
+    return env.Null();
+  }
+
+  textsecure::PreKeyWhisperMessage proto;
+  if (!ParseProtoMessage(env, data, "Invalid PreKeyWhisperMessage protobuf", &proto)) {
+    return env.Null();
+  }
+
+  Napi::Object message = Napi::Object::New(env);
+  message.Set("registrationId", Napi::Number::New(env, proto.registrationid()));
+  message.Set("preKeyId", Napi::Number::New(env, proto.prekeyid()));
+  message.Set("signedPreKeyId", Napi::Number::New(env, proto.signedprekeyid()));
+  message.Set("baseKey", CopyProtoBytesToBuffer(env, proto.basekey()));
+  message.Set("identityKey", CopyProtoBytesToBuffer(env, proto.identitykey()));
+  message.Set("message", CopyProtoBytesToBuffer(env, proto.message()));
+
+  return message;
 }
 
 }  // namespace libsignal_native
