@@ -74,15 +74,16 @@ export class SessionBuilder {
   public initOutgoing(session: E2ESession): Promise<void>;
 }
 
-export class SignalError extends Error {}
+export class SignalError extends Error { }
 export class UntrustedIdentityKeyError extends SignalError {
   addr: string;
   identityKey: Uint8Array;
 }
-export class SessionError extends SignalError {}
-export class MessageCounterError extends SessionError {}
-export class PreKeyError extends SessionError {}
+export class SessionError extends SignalError { }
+export class MessageCounterError extends SessionError { }
+export class PreKeyError extends SessionError { }
 
 export * as crypto from './src/crypto.js';
 export * as curve from './src/curve.js';
 export * as keyhelper from './src/keyhelper.js';
+export { PreKeyWhisperMessage, WhisperMessage } from "./src/protobufs.js"
