@@ -21,6 +21,16 @@ export interface SerializedSessionRecord {
   [key: string]: unknown;
 }
 
+export interface SessionEntryLike {
+  [key: string]: unknown;
+}
+
+export interface CiphertextMessage {
+  type: number;
+  body: Uint8Array;
+  registrationId: number;
+}
+
 export interface SignalStorage {
   loadSession(
     id: string
@@ -52,19 +62,46 @@ export class ProtocolAddress {
 }
 
 export class SessionRecord {
+  static createEntry(): SessionEntryLike;
+  static migrate(serialized: SerializedSessionRecord): void;
   static deserialize(serialized: SerializedSessionRecord): SessionRecord;
   public serialize(): SerializedSessionRecord;
   public haveOpenSession(): boolean;
+  public getSession(key: Uint8Array): SessionEntryLike | undefined;
+  public getOpenSession(): SessionEntryLike | undefined;
+  public setSession(session: SessionEntryLike): void;
+  public getSessions(): SessionEntryLike[];
+  public closeSession(session: SessionEntryLike): void;
+  public openSession(session: SessionEntryLike): void;
+  public isClosed(session: SessionEntryLike): boolean;
+  public removeOldSessions(): void;
   public deleteAllSessions(): void;
 }
 
 export class SessionCipher {
   constructor(storage: SignalStorage, remoteAddress: ProtocolAddress);
+  public toString(): string;
+  public getRecord(): Promise<SessionRecord | undefined>;
+  public storeRecord(record: SessionRecord): Promise<void>;
+  public queueJob<T>(awaitable: () => Promise<T> | T): Promise<T>;
+  public decryptWithSessions(
+    ciphertext: Uint8Array,
+    sessions: SessionEntryLike[]
+  ): Promise<{ session: SessionEntryLike; plaintext: Uint8Array }>;
   public decryptPreKeyWhisperMessage(ciphertext: Uint8Array): Promise<Uint8Array>;
   public decryptWhisperMessage(ciphertext: Uint8Array): Promise<Uint8Array>;
-  public encrypt(
-    data: Uint8Array
-  ): Promise<{ type: number; body: Uint8Array; registrationId: number }>;
+  public doDecryptWhisperMessage(
+    messageBuffer: Uint8Array,
+    session: SessionEntryLike
+  ): Promise<Uint8Array>;
+  public fillMessageKeys(chain: Record<string, unknown>, counter: number): void;
+  public maybeStepRatchet(
+    session: SessionEntryLike,
+    remoteKey: Uint8Array,
+    previousCounter: number
+  ): void;
+  public calculateRatchet(session: SessionEntryLike, remoteKey: Uint8Array, sending: boolean): void;
+  public encrypt(data: Uint8Array): Promise<CiphertextMessage>;
   public hasOpenSession(): Promise<boolean>;
   public closeOpenSession(): Promise<void>;
 }
@@ -72,6 +109,27 @@ export class SessionCipher {
 export class SessionBuilder {
   constructor(storage: SignalStorage, remoteAddress: ProtocolAddress);
   public initOutgoing(session: E2ESession): Promise<void>;
+  public initIncoming(record: SessionRecord, message: Record<string, unknown>): Promise<number | undefined>;
+  public initSession(
+    isInitiator: boolean,
+    ourEphemeralKey: KeyPairType | undefined,
+    ourSignedKey: KeyPairType | undefined,
+    theirIdentityPubKey: Uint8Array,
+    theirEphemeralPubKey: Uint8Array | undefined,
+    theirSignedPubKey: Uint8Array | undefined,
+    registrationId: number
+  ): Promise<SessionEntryLike>;
+  public calculateSendingRatchet(session: SessionEntryLike, remoteKey: Uint8Array): void;
+}
+
+export class FingerprintGenerator {
+  constructor(iterations: number);
+  public createFor(
+    localIdentifier: string,
+    localIdentityKey: Uint8Array,
+    remoteIdentifier: string,
+    remoteIdentityKey: Uint8Array
+  ): Promise<string>;
 }
 
 export class SignalError extends Error { }
@@ -86,4 +144,4 @@ export class PreKeyError extends SessionError { }
 export * as crypto from './src/crypto.js';
 export * as curve from './src/curve.js';
 export * as keyhelper from './src/keyhelper.js';
-export { PreKeyWhisperMessage, WhisperMessage } from "./src/protobufs.js"
+export * as protobuf from "./src/protobufs.js";

@@ -1,15 +1,7 @@
-import BaseKeyType from './base_key_type.js';
-import ChainType from './chain_type.js';
 import SessionRecord from './session_record.js';
-import * as crypto from './crypto.js';
-import * as curve from './curve.js';
 import { UntrustedIdentityKeyError, PreKeyError } from './errors.js';
 import native from './native.js';
 import queueJob from './queue_job.js';
-
-const ZERO_SALT = new Uint8Array(32);
-const WHISPER_TEXT_INFO = new TextEncoder().encode('WhisperText');
-const WHISPER_RATCHET_INFO = new TextEncoder().encode('WhisperRatchet');
 
 export default class SessionBuilder {
   constructor(storage, protocolAddress) {
@@ -20,86 +12,38 @@ export default class SessionBuilder {
   async initOutgoing(device) {
     const fullyQualifiedAddress = this.addr.toString();
     return queueJob(fullyQualifiedAddress, async () => {
-      if (!(await this.storage.isTrustedIdentity(this.addr.id, device.identityKey))) {
-        throw new UntrustedIdentityKeyError(this.addr.id, device.identityKey);
-      }
-
-      curve.verifySignature(device.identityKey, device.signedPreKey.publicKey, device.signedPreKey.signature);
-
-      const baseKey = curve.generateKeyPair();
-      const devicePreKey = device.preKey && device.preKey.publicKey;
-      const session = await this.initSession(
-        true,
-        baseKey,
-        undefined,
-        device.identityKey,
-        devicePreKey,
-        device.signedPreKey.publicKey,
-        device.registrationId
-      );
-
-      session.pendingPreKey = {
-        signedKeyId: device.signedPreKey.keyId,
-        baseKey: baseKey.pubKey,
-      };
-
-      if (device.preKey) {
-        session.pendingPreKey.preKeyId = device.preKey.keyId;
-      }
-
-      let record = await this.storage.loadSession(fullyQualifiedAddress);
-      if (!record) {
-        record = new SessionRecord();
-      } else {
-        const openSession = record.getOpenSession();
-        if (openSession) {
-          record.closeSession(openSession);
+      try {
+        await native.sessionBuilderInitOutgoing(
+          this.storage,
+          fullyQualifiedAddress,
+          this.addr.id,
+          device,
+          SessionRecord
+        );
+      } catch (error) {
+        if (error && error.message === 'UNTRUSTED_IDENTITY') {
+          throw new UntrustedIdentityKeyError(this.addr.id, device.identityKey);
         }
+        throw error;
       }
-
-      record.setSession(session);
-      await this.storage.storeSession(fullyQualifiedAddress, record);
     });
   }
 
   async initIncoming(record, message) {
-    if (!(await this.storage.isTrustedIdentity(this.addr.id, message.identityKey))) {
-      throw new UntrustedIdentityKeyError(this.addr.id, message.identityKey);
+    try {
+      return await native.sessionBuilderInitIncoming(this.storage, this.addr.id, record, message);
+    } catch (error) {
+      if (error && error.message === 'UNTRUSTED_IDENTITY') {
+        throw new UntrustedIdentityKeyError(this.addr.id, message.identityKey);
+      }
+      if (error && error.message === 'INVALID_PREKEY_ID') {
+        throw new PreKeyError('Invalid PreKey ID');
+      }
+      if (error && error.message === 'MISSING_SIGNED_PREKEY') {
+        throw new PreKeyError('Missing SignedPreKey');
+      }
+      throw error;
     }
-
-    if (record.getSession(message.baseKey)) {
-      return undefined;
-    }
-
-    const preKeyPair = await this.storage.loadPreKey(message.preKeyId);
-    if (message.preKeyId && !preKeyPair) {
-      throw new PreKeyError('Invalid PreKey ID');
-    }
-
-    const signedPreKeyPair = await this.storage.loadSignedPreKey(message.signedPreKeyId);
-    if (!signedPreKeyPair) {
-      throw new PreKeyError('Missing SignedPreKey');
-    }
-
-    const existingOpenSession = record.getOpenSession();
-    if (existingOpenSession) {
-      console.warn('Closing open session in favor of incoming prekey bundle');
-      record.closeSession(existingOpenSession);
-    }
-
-    record.setSession(
-      await this.initSession(
-        false,
-        preKeyPair,
-        signedPreKeyPair,
-        message.identityKey,
-        message.baseKey,
-        undefined,
-        message.registrationId
-      )
-    );
-
-    return message.preKeyId;
   }
 
   async initSession(
@@ -111,68 +55,20 @@ export default class SessionBuilder {
     theirSignedPubKey,
     registrationId
   ) {
-    if (isInitiator) {
-      if (ourSignedKey) {
-        throw new Error('Invalid call to initSession');
-      }
-      ourSignedKey = ourEphemeralKey;
-    } else {
-      if (theirSignedPubKey) {
-        throw new Error('Invalid call to initSession');
-      }
-      theirSignedPubKey = theirEphemeralPubKey;
-    }
-
-    const ourIdentityKey = await this.storage.getOurIdentity();
-    const a1 = curve.calculateAgreement(theirSignedPubKey, ourIdentityKey.privKey);
-    const a2 = curve.calculateAgreement(theirIdentityPubKey, ourSignedKey.privKey);
-    const a3 = curve.calculateAgreement(theirSignedPubKey, ourSignedKey.privKey);
-    let a4;
-    if (ourEphemeralKey && theirEphemeralPubKey) {
-      a4 = curve.calculateAgreement(theirEphemeralPubKey, ourEphemeralKey.privKey);
-    }
-
-    const sharedSecret = await native.buildSessionSharedSecretAsync(isInitiator, a1, a2, a3, a4);
-    const masterKey = crypto.deriveSecrets(sharedSecret, ZERO_SALT, WHISPER_TEXT_INFO);
-
-    const session = SessionRecord.createEntry();
-    session.registrationId = registrationId;
-    session.currentRatchet = {
-      rootKey: masterKey[0],
-      ephemeralKeyPair: isInitiator ? curve.generateKeyPair() : ourSignedKey,
-      lastRemoteEphemeralKey: theirSignedPubKey,
-      previousCounter: 0,
-    };
-    session.indexInfo = {
-      created: Date.now(),
-      used: Date.now(),
-      remoteIdentityKey: theirIdentityPubKey,
-      baseKey: isInitiator ? ourEphemeralKey.pubKey : theirEphemeralPubKey,
-      baseKeyType: isInitiator ? BaseKeyType.OURS : BaseKeyType.THEIRS,
-      closed: -1,
-    };
-
-    if (isInitiator) {
-      this.calculateSendingRatchet(session, theirSignedPubKey);
-    }
-
-    return session;
+    const ourIdentityKey = await native.adapterGetOurIdentity(this.storage);
+    return native.sessionBuilderInitSession(
+      isInitiator,
+      ourEphemeralKey,
+      ourSignedKey,
+      theirIdentityPubKey,
+      theirEphemeralPubKey,
+      theirSignedPubKey,
+      registrationId,
+      ourIdentityKey
+    );
   }
 
   calculateSendingRatchet(session, remoteKey) {
-    const ratchet = session.currentRatchet;
-    const sharedSecret = curve.calculateAgreement(remoteKey, ratchet.ephemeralKeyPair.privKey);
-    const masterKey = crypto.deriveSecrets(sharedSecret, ratchet.rootKey, WHISPER_RATCHET_INFO);
-
-    session.addChain(ratchet.ephemeralKeyPair.pubKey, {
-      messageKeys: {},
-      chainKey: {
-        counter: -1,
-        key: masterKey[1],
-      },
-      chainType: ChainType.SENDING,
-    });
-
-    ratchet.rootKey = masterKey[0];
+    native.sessionBuilderCalculateSendingRatchet(session, remoteKey);
   }
 }

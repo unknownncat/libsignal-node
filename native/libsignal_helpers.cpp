@@ -2,13 +2,66 @@
 
 #include <cstring>
 #include <limits>
+#include <memory>
+#include <string>
+#include <unordered_map>
 
 namespace libsignal_native {
 
+namespace {
+
+napi_env g_moduleCacheEnv = nullptr;
+std::unordered_map<std::string, std::unique_ptr<Napi::ObjectReference>> g_moduleCache;
+std::unique_ptr<Napi::ObjectReference> g_bufferCtorRef;
+std::unique_ptr<Napi::FunctionReference> g_bufferConcatRef;
+
+void ResetModuleCacheIfNeeded(const Napi::Env& env) {
+  const napi_env rawEnv = env;
+  if (g_moduleCacheEnv != rawEnv) {
+    g_moduleCache.clear();
+    g_bufferConcatRef.reset();
+    g_bufferCtorRef.reset();
+    g_moduleCacheEnv = rawEnv;
+  }
+}
+
+Napi::Object GetBufferCtor(const Napi::Env& env) {
+  ResetModuleCacheIfNeeded(env);
+  if (g_bufferCtorRef) {
+    return g_bufferCtorRef->Value();
+  }
+  Napi::Object bufferCtor = env.Global().Get("Buffer").As<Napi::Object>();
+  g_bufferCtorRef = std::make_unique<Napi::ObjectReference>(Napi::Persistent(bufferCtor));
+  return bufferCtor;
+}
+
+Napi::Function GetBufferConcat(const Napi::Env& env) {
+  ResetModuleCacheIfNeeded(env);
+  if (g_bufferConcatRef) {
+    return g_bufferConcatRef->Value();
+  }
+  Napi::Object bufferCtor = GetBufferCtor(env);
+  Napi::Function concat = bufferCtor.Get("concat").As<Napi::Function>();
+  g_bufferConcatRef = std::make_unique<Napi::FunctionReference>(Napi::Persistent(concat));
+  return concat;
+}
+
+}  // namespace
+
 Napi::Object RequireModule(const Napi::Env& env, const char* name) {
+  ResetModuleCacheIfNeeded(env);
+
+  const std::string key(name);
+  auto cached = g_moduleCache.find(key);
+  if (cached != g_moduleCache.end() && cached->second) {
+    return cached->second->Value();
+  }
+
   Napi::Object global = env.Global();
   Napi::Function require = global.Get("require").As<Napi::Function>();
-  return require.Call(global, {Napi::String::New(env, name)}).As<Napi::Object>();
+  Napi::Object module = require.Call(global, {Napi::String::New(env, name)}).As<Napi::Object>();
+  g_moduleCache[key] = std::make_unique<Napi::ObjectReference>(Napi::Persistent(module));
+  return module;
 }
 
 Napi::Object EnsureObject(const Napi::Value& value, const char* name) {
@@ -47,8 +100,8 @@ Napi::Function EnsureFunction(const Napi::Value& value, const char* name) {
 }
 
 Napi::Buffer<uint8_t> BufferConcat(const Napi::Env& env, std::initializer_list<Napi::Value> values) {
-  Napi::Object bufferCtor = env.Global().Get("Buffer").As<Napi::Object>();
-  Napi::Function concat = bufferCtor.Get("concat").As<Napi::Function>();
+  Napi::Object bufferCtor = GetBufferCtor(env);
+  Napi::Function concat = GetBufferConcat(env);
   Napi::Array arr = Napi::Array::New(env, static_cast<uint32_t>(values.size()));
   uint32_t idx = 0;
   for (const Napi::Value& v : values) {
